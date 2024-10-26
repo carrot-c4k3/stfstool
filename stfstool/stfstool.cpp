@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <Stfs/StfsPackage.h>
 
+#define VERSION_STR "v0.1"
+
 #define NEXT_ARG(arg_name) { \
 			i++;\
 			if (i >= argc)\
@@ -64,14 +66,38 @@ bool ReadEntireFile(std::string path, BYTE** contents, size_t* size)
 	*size = data_size;
 }
 
+void PrintBanner()
+{
+	printf("STFSTool " VERSION_STR " by carrot_c4k3\n");
+	printf("based on Velocity by Hetelek and Experiment5X\n");
+}
+
+void PrintUsage()
+{
+	printf("\n\tUsage: stfstool [--create]|[--open] [filename] <options>\n\n");
+	printf("For detailed information on all options pass --help\n\n");
+}
+
 
 int wmain(int argc, wchar_t** argv)
 {
 	StfsOpenMode openMode = Unknown;
 	std::string packagePath;
 	std::string kvPath;
+
+	// package metadata
+	std::wstring titleName;
+	std::wstring displayName;
+	DWORD titleId = 0xFFFE07D1; // Xbox 360 Dashboard title id by default
 	BYTE profileId[8] = { 0 };
 	std::vector<FileInjectInfo> filesToInject;
+
+	PrintBanner();
+	if (argc < 2)
+	{
+		PrintUsage();
+		return 0;
+	}
 
 	for (int i = 0; i < argc; i++)
 	{
@@ -131,6 +157,31 @@ int wmain(int argc, wchar_t** argv)
 				&profileId[0], &profileId[1], &profileId[2], &profileId[3],
 				&profileId[4], &profileId[5], &profileId[6], &profileId[7]);
 		}
+		else if (cur_arg == L"-tid" || cur_arg == L"--title-id")
+		{
+			NEXT_ARG("--title-id");
+			std::wstring titleIdStr(argv[i]);
+
+			if (titleIdStr.length() != 8)
+			{
+				printf("Error: Title ID should be 8 characters long, "
+					"provided %i (--profile-id)\n", titleIdStr.length());
+
+				return 0;
+			}
+
+			swscanf_s(titleIdStr.c_str(), L"%08X", &titleId);
+		}
+		else if (cur_arg == L"-tn" || cur_arg == L"--title-name")
+		{
+			NEXT_ARG("--title-name");
+			titleName = std::wstring(argv[i]);
+		}
+		else if (cur_arg == L"-dn" || cur_arg == L"--display-name")
+		{
+			NEXT_ARG("--display-name");
+			displayName = std::wstring(argv[i]);
+		}
 	}
 
 	if (openMode == Unknown)
@@ -162,10 +213,10 @@ int wmain(int argc, wchar_t** argv)
 
 
 	StfsPackage package(packagePath, StfsPackageCreate);
-	package.metaData->titleName = L"Call of Duty 4";
-	package.metaData->displayName = L"Call of Duty 4 Save Game";
+	package.metaData->titleName = titleName;
+	package.metaData->displayName = displayName;
 	package.metaData->contentType = SavedGame;
-	package.metaData->titleID = 0x415607E6;
+	package.metaData->titleID = titleId;
 	package.metaData->mediaID = 0x15E8CF88;
 	package.metaData->version = 1;
 	package.metaData->baseVersion = 1;
