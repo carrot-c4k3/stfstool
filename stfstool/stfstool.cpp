@@ -2,6 +2,9 @@
 #include <fstream>
 #include <locale>
 #include <codecvt>
+#include <map>
+#include <algorithm>
+#include <cwctype>
 
 #include <stdio.h>
 #include <Stfs/StfsPackage.h>
@@ -28,6 +31,40 @@ typedef struct _FileInjectInfo {
 	std::string nameInPackage;
 } FileInjectInfo;
 
+std::map<std::wstring, ContentType> ContentTypeMap = {
+	{L"arcadegame", ArcadeGame},
+	{L"avatarassetpack", AvatarAssetPack},
+	{L"avataritem", AvatarItem},
+	{L"cachefile", CacheFile},
+	{L"communitygame", CommunityGame},
+	{L"gamedemo", GameDemo},
+	{L"gameondemand", GameOnDemand},
+	{L"gamerpicture", GamerPicture},
+	{L"gamertitle", GamerTitle},
+	{L"gametrailer", GameTrailer},
+	{L"gamevideo", GameVideo},
+	{L"installedgame", InstalledGame},
+	{L"installer", Installer},
+	{L"iptvpausebuffer", IPTVPauseBuffer},
+	{L"licensestore", LicenseStore},
+	{L"marketplacecontent", MarketPlaceContent},
+	{L"movie", Movie},
+	{L"musicvideo", MusicVideo},
+	{L"podcastvideo", PodcastVideo},
+	{L"profile", Profile},
+	{L"publisher", Publisher},
+	{L"savedgame", SavedGame},
+	{L"storagedownload", StorageDownload},
+	{L"theme", Theme},
+	{L"video", Video},
+	{L"viralvideo", ViralVideo},
+	{L"xboxdownload", XboxDownload},
+	{L"xboxoriginalgame", XboxOriginalGame},
+	{L"xboxsavedgame", XboxSavedGame},
+	{L"xbox360title", Xbox360Title},
+	{L"xna", XNA}
+};
+
 // From https://stackoverflow.com/questions/4804298/how-to-convert-wstring-into-string
 std::wstring s2ws(const std::string& str)
 {
@@ -45,7 +82,7 @@ std::string ws2s(const std::wstring& wstr)
 	return converterX.to_bytes(wstr);
 }
 
-bool ReadEntireFile(std::string path, BYTE** contents, size_t* size)
+bool ReadEntireFile(std::wstring path, BYTE** contents, size_t* size)
 {
 	std::fstream file;
 	file.open(path, std::ios::in | std::ios::binary);
@@ -88,8 +125,23 @@ int wmain(int argc, wchar_t** argv)
 	// package metadata
 	std::wstring titleName;
 	std::wstring displayName;
+
+	size_t thumbnailSize = 0;
+	BYTE* thumbnailData = 0;
+	std::wstring thumbnailPath;
+	size_t titleThumbnailSize = 0;
+	BYTE* titleThumbnailData = 0;
+	std::wstring titleThumbnailPath;
+	DWORD version = 0;
+	DWORD baseVersion = 0;
 	DWORD titleId = 0xFFFE07D1; // Xbox 360 Dashboard title id by default
+	DWORD mediaId = 0;
+	BYTE discNumber = 0;
+	BYTE discInSet = 0;
 	BYTE profileId[8] = { 0 };
+	BYTE deviceId[20] = { 0 };
+	ContentType contentType = SavedGame;
+
 	std::vector<FileInjectInfo> filesToInject;
 
 	PrintBanner();
@@ -144,10 +196,11 @@ int wmain(int argc, wchar_t** argv)
 			NEXT_ARG("--profile-id");
 			std::wstring profileIdStr(argv[i]);
 
-			if (profileIdStr.length() != 0x10)
+			if (profileIdStr.length() != sizeof(profileId) * 2)
 			{
-				printf("Error: Profile ID should be 16 characters long, "
-					"provided %i (--profile-id)\n", profileIdStr.length());
+				printf("Error: Profile ID should be %i characters long, "
+					"provided %i (--profile-id)\n", sizeof(profileId) * 2,
+					profileIdStr.length());
 
 				return 0;
 			}
@@ -156,6 +209,30 @@ int wmain(int argc, wchar_t** argv)
 				L"%02X%02X%02X%02X%02X%02X%02X%02X",
 				&profileId[0], &profileId[1], &profileId[2], &profileId[3],
 				&profileId[4], &profileId[5], &profileId[6], &profileId[7]);
+		}
+		else if (cur_arg == L"-did" || cur_arg == L"--device-id")
+		{
+			NEXT_ARG("--device-id");
+			std::wstring deviceIdStr(argv[i]);
+
+			if (deviceIdStr.length() != sizeof(deviceId) * 2)
+			{
+				printf("Error: Profile ID should be %i characters long, "
+					"provided %i (--device-id)\n", sizeof(deviceId) * 2,
+					deviceIdStr.length());
+
+				return 0;
+			}
+
+			swscanf_s(deviceIdStr.c_str(),
+				L"%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X"
+				 "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+				&deviceId[0], &deviceId[1], &deviceId[2], &deviceId[3],
+				&deviceId[4], &deviceId[5], &deviceId[6], &deviceId[7],
+				&deviceId[8], &deviceId[9], &deviceId[10], &deviceId[11],
+				&deviceId[12], &deviceId[13], &deviceId[14], &deviceId[15],
+				&deviceId[16], &deviceId[17], &deviceId[18], &deviceId[19],
+				&deviceId[20]);
 		}
 		else if (cur_arg == L"-tid" || cur_arg == L"--title-id")
 		{
@@ -172,6 +249,55 @@ int wmain(int argc, wchar_t** argv)
 
 			swscanf_s(titleIdStr.c_str(), L"%08X", &titleId);
 		}
+		else if (cur_arg == L"-mid" || cur_arg == L"--media-id")
+		{
+			NEXT_ARG("--media-id");
+			std::wstring mediaIdStr(argv[i]);
+
+			if (mediaIdStr.length() != 8)
+			{
+				printf("Error: Media ID should be 8 characters long, "
+					"provided %i (--profile-id)\n", mediaIdStr.length());
+
+				return 0;
+			}
+
+			swscanf_s(mediaIdStr.c_str(), L"%08X", &mediaId);
+		}
+		else if (cur_arg == L"-v" || cur_arg == L"--version")
+		{
+			NEXT_ARG("--version");
+			std::wstring versionStr(argv[i]);
+
+			swscanf_s(versionStr.c_str(), L"%i", &version);
+		}
+		else if (cur_arg == L"-bv" || cur_arg == L"--base-version")
+		{
+			NEXT_ARG("--base-version");
+			std::wstring baseVersionStr(argv[i]);
+
+			swscanf_s(baseVersionStr.c_str(), L"%i", &baseVersion);
+		}
+		else if (cur_arg == L"-dn" || cur_arg == L"--disc-number")
+		{
+			NEXT_ARG("--disc-number");
+			std::wstring discNumberStr(argv[i]);
+
+			// can't scanf for a single byte so read as int and cast down
+			int discNumInt = 0;
+			swscanf_s(discNumberStr.c_str(), L"%i", &discNumInt);
+			discNumber = discNumInt;
+		}
+		else if (cur_arg == L"-dis" || cur_arg == L"--disc-in-set")
+		{
+			NEXT_ARG("--disc-in-set");
+			std::wstring discInSetStr(argv[i]);
+
+			// can't scanf for a single byte so read as int and cast down
+			int discInSetInt = 0;
+			swscanf_s(discInSetStr.c_str(), L"%i", &discInSetInt);
+			discInSet = discInSetInt;
+			}
 		else if (cur_arg == L"-tn" || cur_arg == L"--title-name")
 		{
 			NEXT_ARG("--title-name");
@@ -181,6 +307,33 @@ int wmain(int argc, wchar_t** argv)
 		{
 			NEXT_ARG("--display-name");
 			displayName = std::wstring(argv[i]);
+		}
+		else if (cur_arg == L"-thumb" || cur_arg == L"--thumbnail")
+		{
+			NEXT_ARG("--thumbnail");
+			thumbnailPath = std::wstring(argv[i]);
+		}
+		else if (cur_arg == L"-tthumb" || cur_arg == L"--title-thumbnail")
+		{
+			NEXT_ARG("--title-thumbnail");
+			titleThumbnailPath = std::wstring(argv[i]);
+		}
+		else if (cur_arg == L"-ct" || cur_arg == L"--content-type")
+		{
+			NEXT_ARG("--content-type");
+			std::wstring contentTypeStr(argv[i]);
+			std::transform(contentTypeStr.begin(), contentTypeStr.end(),
+				contentTypeStr.begin(), [](wchar_t c) 
+				{ return std::towlower(c); });
+
+
+			if (!ContentTypeMap.contains(contentTypeStr))
+			{
+				printf("Error: Invalid content type! (--content-type)\n");
+				return 0;
+			}
+
+			contentType = ContentTypeMap[contentTypeStr];
 		}
 	}
 
@@ -203,33 +356,46 @@ int wmain(int argc, wchar_t** argv)
 	}
 
 
-	size_t thumbnail_size = 0;
-	BYTE* thumbnail_data = 0;
-	if (ReadEntireFile("thumbnail.png", &thumbnail_data, &thumbnail_size) == false)
+	// read the thumbnails
+	if (!thumbnailPath.empty())
 	{
-		printf("Error: Failed to read thumbnail\n");
-		return 0;
+		if (ReadEntireFile(thumbnailPath, &thumbnailData, 
+							&thumbnailSize) == false)
+		{
+			printf("Error: Failed to read thumbnail\n");
+			return 0;
+		}
+	}
+	if (!titleThumbnailPath.empty())
+	{
+		if (ReadEntireFile(titleThumbnailPath, &titleThumbnailData,
+							&titleThumbnailSize) == false)
+		{
+			printf("Error: Failed to read title thumbnail\n");
+			return 0;
+		}
 	}
 
 
 	StfsPackage package(packagePath, StfsPackageCreate);
 	package.metaData->titleName = titleName;
 	package.metaData->displayName = displayName;
-	package.metaData->contentType = SavedGame;
+	package.metaData->contentType = contentType;
 	package.metaData->titleID = titleId;
-	package.metaData->mediaID = 0x15E8CF88;
-	package.metaData->version = 1;
-	package.metaData->baseVersion = 1;
-	package.metaData->discNumber = 1;
-	package.metaData->discInSet = 1;
+	package.metaData->mediaID = mediaId;
+	package.metaData->version = version;
+	package.metaData->baseVersion = baseVersion;
+	package.metaData->discNumber = discNumber;
+	package.metaData->discInSet = discInSet;
 
 	memcpy(package.metaData->profileID, profileId, sizeof(profileId));
+	memcpy(package.metaData->deviceID, deviceId, sizeof(deviceId));
 
-	package.metaData->thumbnailImage = thumbnail_data;
-	package.metaData->thumbnailImageSize = thumbnail_size;
+	package.metaData->thumbnailImage = thumbnailData;
+	package.metaData->thumbnailImageSize = thumbnailSize;
 
-	package.metaData->titleThumbnailImage = thumbnail_data;
-	package.metaData->titleThumbnailImageSize = thumbnail_size;
+	package.metaData->titleThumbnailImage = titleThumbnailData;
+	package.metaData->titleThumbnailImageSize = titleThumbnailSize;
 
 	package.metaData->WriteMetaData();
 
