@@ -27,7 +27,7 @@ typedef enum _StfsOpenMode {
 } StfsOpenMode;
 
 typedef struct _FileInjectInfo {
-	std::wstring path;
+	std::string path;
 	std::string nameInPackage;
 } FileInjectInfo;
 
@@ -183,7 +183,7 @@ int wmain(int argc, wchar_t** argv)
 			FileInjectInfo injectInfo;
 
 			NEXT_ARG("--inject_file");
-			injectInfo.path = std::wstring(argv[i]);
+			injectInfo.path = ws2s(std::wstring(argv[i]));
 
 			NEXT_ARG("--inject_file");
 			std::wstring nameInPackage(argv[i]);
@@ -278,7 +278,7 @@ int wmain(int argc, wchar_t** argv)
 
 			swscanf_s(baseVersionStr.c_str(), L"%i", &baseVersion);
 		}
-		else if (cur_arg == L"-dn" || cur_arg == L"--disc-number")
+		else if (cur_arg == L"-dnum" || cur_arg == L"--disc-number")
 		{
 			NEXT_ARG("--disc-number");
 			std::wstring discNumberStr(argv[i]);
@@ -399,7 +399,11 @@ int wmain(int argc, wchar_t** argv)
 
 	package.metaData->WriteMetaData();
 
-	package.InjectFile("exploit.bin", "savegame.svg");
+	for (auto i = filesToInject.begin(); i != filesToInject.end(); i++) {
+		FileInjectInfo curFile = *i;
+		package.InjectFile(curFile.path, curFile.nameInPackage);
+	}
+//	package.InjectFile("exploit.bin", "savegame.svg");
 
 	package.Resign(kvPath);
 	package.Close();
