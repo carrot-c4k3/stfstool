@@ -405,6 +405,7 @@ int wmain(int argc, wchar_t** argv)
 	}
 //	package.InjectFile("exploit.bin", "savegame.svg");
 
+	package.Rehash();
 	package.Resign(kvPath);
 	package.Close();
 
